@@ -12,6 +12,8 @@
              x:Class="Artemis.UI.Screens.Settings.GeneralTabView"
              x:DataType="settings:GeneralTabViewModel">
 
+    <Grid>
+
         <!-- FPS COUNTER OVERLAY -->
         <Border Background="#33000000"
                 Padding="6"
@@ -21,7 +23,7 @@
                 VerticalAlignment="Top">
             <StackPanel Orientation="Horizontal" Spacing="6">
                 <avalonia:MaterialIcon Kind="Speedometer" Width="18" Height="18"/>
-                <TextBlock Text="{CompiledBinding CurrentFps, StringFormat='FPS: {0}'}"
+                <TextBlock Text="{CompiledBinding CurrentFps, StringFormat='FPS: {0:F1}'}"
                            FontWeight="Bold"/>
             </StackPanel>
         </Border>
