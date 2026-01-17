@@ -1,284 +1,437 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Linq;
-using System.Reactive;
-using System.Reactive.Disposables;
-using System.Reactive.Disposables.Fluent;
-using System.Threading;
-using System.Threading.Tasks;
-using Artemis.Core;
-using Artemis.Core.LayerBrushes;
-using Artemis.Core.Providers;
-using Artemis.Core.Services;
-using Artemis.UI.Screens.StartupWizard;
-using Artemis.UI.Services.Interfaces;
-using Artemis.UI.Services.Updating;
-using Artemis.UI.Shared.Providers;
-using Artemis.UI.Shared.Routing;
-using Artemis.UI.Shared.Services;
-using Artemis.UI.Shared.Services.Builders;
-using Avalonia.Threading;
-using DryIoc;
-using DynamicData;
-using FluentAvalonia.Interop;
-using ReactiveUI;
-using Serilog.Events;
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:layerBrushes="clr-namespace:Artemis.Core.LayerBrushes;assembly=Artemis.Core"
+             xmlns:avalonia="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:settings="clr-namespace:Artemis.UI.Screens.Settings"
+             xmlns:shared="clr-namespace:Artemis.UI.Shared;assembly=Artemis.UI.Shared"
+             xmlns:controls="clr-namespace:FluentAvalonia.UI.Controls;assembly=FluentAvalonia"
+             xmlns:behaviors="clr-namespace:Artemis.UI.Shared.Behaviors;assembly=Artemis.UI.Shared"
+             mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="2400"
+             x:Class="Artemis.UI.Screens.Settings.GeneralTabView"
+             x:DataType="settings:GeneralTabViewModel">
 
-namespace Artemis.UI.Screens.Settings;
+    <Grid>
 
-public class GeneralTabViewModel : RoutableScreen
-{
-    private readonly IAutoRunProvider? _autoRunProvider;
-    private readonly IProtocolProvider? _protocolProvider;
-    private readonly IDebugService _debugService;
-    private readonly PluginSetting<LayerBrushReference> _defaultLayerBrushDescriptor;
-    private readonly INotificationService _notificationService;
-    private readonly ISettingsService _settingsService;
-    private readonly IUpdateService _updateService;
-    private readonly IWindowService _windowService;
-    private bool _startupWizardOpen;
+        <Border Background="#33000000"
+                Padding="6"
+                Margin="10"
+                CornerRadius="4"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <avalonia:MaterialIcon Kind="Speedometer" Width="18" Height="18"/>
+                <TextBlock Text="{CompiledBinding CurrentFps, StringFormat='FPS: {0}'}"
+                           FontWeight="Bold"/>
+            </StackPanel>
+        </Border>
 
-    public GeneralTabViewModel(IContainer container,
-        ISettingsService settingsService,
-        IPluginManagementService pluginManagementService,
-        IDebugService debugService,
-        IWindowService windowService,
-        IUpdateService updateService,
-        INotificationService notificationService)
-    {
-        DisplayName = "General";
-        _settingsService = settingsService;
-        _debugService = debugService;
-        _windowService = windowService;
-        _updateService = updateService;
-        _notificationService = notificationService;
-        _autoRunProvider = container.Resolve<IAutoRunProvider>(IfUnresolved.ReturnDefault);
-        _protocolProvider = container.Resolve<IProtocolProvider>(IfUnresolved.ReturnDefault);
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="15" MaxWidth="1000">
+                <TextBlock Classes="h4">General settings</TextBlock>
+                <TextBlock>
+                    Here you can change the general settings op the application, for plugin and device specific settings, see the other tabs.
+                </TextBlock>
 
-        List<LayerBrushProvider> layerBrushProviders = pluginManagementService.GetFeaturesOfType<LayerBrushProvider>();
-        List<IGraphicsContextProvider> graphicsContextProviders = container.Resolve<List<IGraphicsContextProvider>>();
-        LayerBrushDescriptors = new ObservableCollection<LayerBrushDescriptor>(layerBrushProviders.SelectMany(l => l.LayerBrushDescriptors));
-        GraphicsContexts = ["Software"];
-        GraphicsContexts.AddRange(graphicsContextProviders.Select(p => p.GraphicsContextName));
+                <!-- General settings -->
+                <TextBlock Classes="card-title">General</TextBlock>
+                <Border Classes="card" VerticalAlignment="Stretch" Margin="0,0,5,0">
+                    <StackPanel>
+                        <StackPanel IsVisible="{CompiledBinding IsAutoRunSupported}">
+                            <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock>Auto-run on startup</TextBlock>
+                                </StackPanel>
+                                <ToggleSwitch Grid.Row="0" Grid.Column="1" VerticalAlignment="Center" IsChecked="{CompiledBinding UIAutoRun.Value}" MinWidth="0" Margin="0 -10" OnContent="Yes"
+                                              OffContent="No" />
+                            </Grid>
+                            <Border Classes="card-separator" />
 
-        _defaultLayerBrushDescriptor = _settingsService.GetSetting("ProfileEditor.DefaultLayerBrushDescriptor", new LayerBrushReference
-        {
-            LayerBrushProviderId = "Artemis.Plugins.LayerBrushes.Color.ColorBrushProvider-92a9d6ba",
-            BrushType = "SolidBrush"
-        });
+                            <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock>Hide window on auto-run</TextBlock>
+                                </StackPanel>
+                                <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                    <ToggleSwitch IsChecked="{CompiledBinding !UIShowOnStartup.Value}" IsEnabled="{CompiledBinding UIAutoRun.Value}" MinWidth="0" Margin="0 -10" OnContent="Yes"
+                                                  OffContent="No" />
+                                </StackPanel>
+                            </Grid>
+                            <Border Classes="card-separator" />
 
-        ShowLogs = ReactiveCommand.Create(ExecuteShowLogs);
-        CheckForUpdate = ReactiveCommand.CreateFromTask(ExecuteCheckForUpdate);
-        ShowSetupWizard = ReactiveCommand.CreateFromTask(ExecuteShowSetupWizard);
-        ShowDebugger = ReactiveCommand.Create(ExecuteShowDebugger);
-        ShowDataFolder = ReactiveCommand.Create(ExecuteShowDataFolder);
+                            <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock>Associate with Artemis links</TextBlock>
+                                    <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                                        Open Artemis when navigating to artemis:// links, allows opening workshop entries from your browser.
+                                    </TextBlock>
+                                </StackPanel>
+                                <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                    <ToggleSwitch IsChecked="{CompiledBinding UIUseProtocol.Value}" OnContent="Yes" OffContent="No" MinWidth="0" Margin="0 -10" />
+                                </StackPanel>
+                            </Grid>
+                            <Border Classes="card-separator"/>
 
-        this.WhenActivated(d =>
-        {
-            UIAutoRun.SettingChanged += UIAutoRunOnSettingChanged;
-            UIUseProtocol.SettingChanged += UIUseProtocolOnSettingChanged;
-            UIAutoRunDelay.SettingChanged += UIAutoRunDelayOnSettingChanged;
-            EnableMica.SettingChanged += EnableMicaOnSettingChanged;
+                            <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto" IsVisible="{CompiledBinding IsWindows11}">
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock>Enable Mica effect</TextBlock>
+                                    <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                                        The Mica effect is the semi-transparent effect used by the application window, the colors are based on your wallpaper.
+                                    </TextBlock>
+                                </StackPanel>
+                                <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                    <ToggleSwitch IsChecked="{CompiledBinding EnableMica.Value}" OnContent="Yes" OffContent="No" MinWidth="0" Margin="0 -10" />
+                                </StackPanel>
+                            </Grid>
+                            <Border Classes="card-separator" IsVisible="{CompiledBinding IsWindows11}"/>
 
-            Dispatcher.UIThread.InvokeAsync(ApplyAutoRun);
-            Dispatcher.UIThread.Invoke(ApplyProtocolAssociation);
-            Disposable.Create(() =>
-            {
-                UIAutoRun.SettingChanged -= UIAutoRunOnSettingChanged;
-                UIUseProtocol.SettingChanged -= UIUseProtocolOnSettingChanged;
-                UIAutoRunDelay.SettingChanged -= UIAutoRunDelayOnSettingChanged;
-                EnableMica.SettingChanged -= EnableMicaOnSettingChanged;
+                            <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock>Startup delay</TextBlock>
+                                    <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                                        Set the amount of seconds to wait before auto-running Artemis.
+                                    </TextBlock>
+                                    <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                                        If some devices don't work because Artemis starts before the manufacturer's software, try increasing this value.
+                                    </TextBlock>
+                                </StackPanel>
+                                <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal">
+                                    <controls:NumberBox IsEnabled="{CompiledBinding UIAutoRun.Value}" Width="120">
+                                        <Interaction.Behaviors>
+                                            <behaviors:LostFocusNumberBoxBindingBehavior Value="{CompiledBinding UIAutoRunDelay.Value}" />
+                                        </Interaction.Behaviors>
+                                    </controls:NumberBox>
+                                    <TextBlock VerticalAlignment="Center" TextAlignment="Right" Width="30">sec</TextBlock>
+                                </StackPanel>
+                            </Grid>
+                            <Border Classes="card-separator" />
+                        </StackPanel>
 
-                _settingsService.SaveAllSettings();
-            }).DisposeWith(d);
-        });
-    }
+                        <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock>Log level</TextBlock>
+                                <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                                    Sets the logging level, a higher logging level will result in more log files.
+                                </TextBlock>
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                <shared:EnumComboBox Width="150" Value="{CompiledBinding CoreLoggingLevel.Value}" />
+                            </StackPanel>
+                        </Grid>
+                        <Border Classes="card-separator" />
 
-    public ReactiveCommand<Unit, Unit> ShowLogs { get; }
-    public ReactiveCommand<Unit, Unit> CheckForUpdate { get; }
-    public ReactiveCommand<Unit, Unit> ShowSetupWizard { get; }
-    public ReactiveCommand<Unit, Unit> ShowDebugger { get; }
-    public ReactiveCommand<Unit, Unit> ShowDataFolder { get; }
+                        <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock>Logs</TextBlock>
+                                <TextBlock Classes="subtitle">
+                                    Opens the directory where logs are stored.
+                                </TextBlock>
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                <Button Command="{CompiledBinding ShowLogs}" Width="150" Content="Show logs" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
 
-    public bool IsAutoRunSupported => _autoRunProvider != null;
-    public bool IsWindows11 => OSVersionHelper.IsWindows11();
-    public bool IsWindows => OSVersionHelper.IsWindows();
+                <!-- Web server settings -->
+                <TextBlock Classes="card-title">Web server</TextBlock>
+                <Border Classes="card" VerticalAlignment="Stretch" Margin="0,0,5,0">
+                    <StackPanel>
+                        <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock>Enable web server</TextBlock>
+                                <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                                    Artemis runs a local web server that can be used to externally interact with the application.
+                                </TextBlock>
+                                <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                                    This web server can only be accessed by applications running on your own computer, e.g. supported games.
+                                </TextBlock>
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                <ToggleSwitch IsChecked="{CompiledBinding WebServerEnabled.Value}" OnContent="Yes" OffContent="No" MinWidth="0" Margin="0 -10" />
+                            </StackPanel>
+                        </Grid>
+                        <Border Classes="card-separator" />
 
-    public ObservableCollection<LayerBrushDescriptor> LayerBrushDescriptors { get; }
-    public ObservableCollection<string> GraphicsContexts { get; }
+                        <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock>Enable remote access</TextBlock>
+                                <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                                    By default the web server can only be accessed by applications running on your own computer, e.g. supported games. 
+                                </TextBlock>
+                                <TextBlock Classes="subtitle warning" TextWrapping="Wrap">
+                                    Enabling remote access allows you to access Artemis from other devices on your network, depending on your router even the outside world. 
+                                </TextBlock>
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                <ToggleSwitch IsChecked="{CompiledBinding WebServerRemoteAccess.Value}" OnContent="Yes" OffContent="No" MinWidth="0" Margin="0 -10" />
+                            </StackPanel>
+                        </Grid>
+                        <Border Classes="card-separator" />
 
-    public ObservableCollection<RenderSettingViewModel> RenderScales { get; } =
-    [
-        new RenderSettingViewModel("25%", 0.25),
-        new RenderSettingViewModel("50%", 0.5),
-        new RenderSettingViewModel("100%", 1)
-    ];
+                        <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock>Web server port</TextBlock>
+                                <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                                    If the webserver does not work you can try changing the port to one that is available.
+                                </TextBlock>
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                <controls:NumberBox Width="150">
+                                    <Interaction.Behaviors>
+                                        <behaviors:LostFocusNumberBoxBindingBehavior Value="{CompiledBinding WebServerPort.Value}" />
+                                    </Interaction.Behaviors>
+                                </controls:NumberBox>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
 
-    public ObservableCollection<RenderSettingViewModel> TargetFrameRates { get; } =
-    [
-        new RenderSettingViewModel("10 FPS", 10),
-        new RenderSettingViewModel("20 FPS", 20),
-        new RenderSettingViewModel("30 FPS", 30),
-        new RenderSettingViewModel("45 FPS", 45),
-        new RenderSettingViewModel("60 FPS (lol)", 60),
-        new RenderSettingViewModel("144 FPS (omegalol)", 144)
-    ];
+                <!-- Updating -->
+                <StackPanel>
+                    <TextBlock Classes="card-title">Updating</TextBlock>
+                    <Border Classes="card" VerticalAlignment="Stretch" Margin="0,0,5,0">
+                        <StackPanel>
+                            <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock>Check for updates</TextBlock>
+                                    <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                                        If enabled, we'll check for updates on startup and periodically while running.
+                                    </TextBlock>
+                                </StackPanel>
+                                <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                    <ToggleSwitch IsChecked="{CompiledBinding UICheckForUpdates.Value}" MinWidth="0" OnContent="Yes" OffContent="No" />
+                                </StackPanel>
+                            </Grid>
+                            <Border Classes="card-separator" />
 
-    public LayerBrushDescriptor? SelectedLayerBrushDescriptor
-    {
-        get => LayerBrushDescriptors.FirstOrDefault(d => d.MatchesLayerBrushReference(_defaultLayerBrushDescriptor.Value));
-        set
-        {
-            if (value != null) _defaultLayerBrushDescriptor.Value = new LayerBrushReference(value);
-        }
-    }
+                            <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock>Auto-install updates</TextBlock>
+                                    <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                                        Automatically install new versions of Artemis in the background when available.
+                                    </TextBlock>
+                                </StackPanel>
+                                <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                    <ToggleSwitch IsEnabled="{CompiledBinding UICheckForUpdates.Value}" IsChecked="{CompiledBinding UIAutoUpdate.Value}" MinWidth="0" OnContent="Yes" OffContent="No" />
+                                </StackPanel>
+                            </Grid>
+                            <Border Classes="card-separator" />
 
-    public RenderSettingViewModel? SelectedRenderScale
-    {
-        get => RenderScales.FirstOrDefault(s => Math.Abs(s.Value - CoreRenderScale.Value) < 0.01);
-        set
-        {
-            if (value != null)
-                CoreRenderScale.Value = value.Value;
-        }
-    }
+                            <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto" IsVisible="{CompiledBinding IsWindows}">
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock>Show workshop update notifications</TextBlock>
+                                    <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                                        Show a desktop notification whenever workshop updates are installed.
+                                    </TextBlock>
+                                </StackPanel>
+                                <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                    <ToggleSwitch IsChecked="{CompiledBinding WorkshopShowNotifications.Value}" MinWidth="0" OnContent="Yes" OffContent="No" />
+                                </StackPanel>
+                            </Grid>
+                            <Border Classes="card-separator" />
 
-    public RenderSettingViewModel? SelectedTargetFrameRate
-    {
-        get => TargetFrameRates.FirstOrDefault(s => Math.Abs(s.Value - CoreTargetFrameRate.Value) < 0.01);
-        set
-        {
-            if (value != null)
-                CoreTargetFrameRate.Value = (int) value.Value;
-        }
-    }
+                            <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock>Update</TextBlock>
+                                    <TextBlock Classes="subtitle">
+                                        Use the button on the right to check for updates now.
+                                    </TextBlock>
+                                </StackPanel>
+                                <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                    <Button Command="{CompiledBinding CheckForUpdate}" Width="150" Content="Check now" />
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
 
-    public PluginSetting<bool> UIAutoRun => _settingsService.GetSetting("UI.AutoRun", false);
-    public PluginSetting<bool> UIUseProtocol => _settingsService.GetSetting("UI.UseProtocol", true);
-    public PluginSetting<int> UIAutoRunDelay => _settingsService.GetSetting("UI.AutoRunDelay", 15);
-    public PluginSetting<bool> UIShowOnStartup => _settingsService.GetSetting("UI.ShowOnStartup", true);
-    public PluginSetting<bool> EnableMica => _settingsService.GetSetting("UI.EnableMica", true);
-    public PluginSetting<bool> UICheckForUpdates => _settingsService.GetSetting("UI.Updating.AutoCheck", true);
-    public PluginSetting<bool> WorkshopShowNotifications => _settingsService.GetSetting("Workshop.ShowNotifications", true);
-    public PluginSetting<bool> UIAutoUpdate => _settingsService.GetSetting("UI.Updating.AutoInstall", true);
-    public PluginSetting<bool> ProfileEditorShowDataModelValues => _settingsService.GetSetting("ProfileEditor.ShowDataModelValues", false);
-    public PluginSetting<LogEventLevel> CoreLoggingLevel => _settingsService.GetSetting("Core.LoggingLevel", LogEventLevel.Information);
-    public PluginSetting<string> CorePreferredGraphicsContext => _settingsService.GetSetting("Core.PreferredGraphicsContext", "Software");
-    public PluginSetting<double> CoreRenderScale => _settingsService.GetSetting("Core.RenderScale", 0.5);
-    public PluginSetting<int> CoreTargetFrameRate => _settingsService.GetSetting("Core.TargetFrameRate", 30);
-    public PluginSetting<bool> WebServerEnabled => _settingsService.GetSetting("WebServer.Enabled", true);
-    public PluginSetting<bool> WebServerRemoteAccess => _settingsService.GetSetting("WebServer.RemoteAccess", false);
-    public PluginSetting<int> WebServerPort => _settingsService.GetSetting("WebServer.Port", 9696);
+                <!-- Profile editor -->
+                <TextBlock Classes="card-title">Profile editor</TextBlock>
+                <Border Classes="card" VerticalAlignment="Stretch" Margin="0,0,5,0">
+                    <StackPanel>
+                        <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock>Show condition data model values</TextBlock>
+                                <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                                    While selecting a condition target, show the current values of the data model.
+                                </TextBlock>
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                <ToggleSwitch IsChecked="{CompiledBinding ProfileEditorShowDataModelValues.Value}" MinWidth="0" OnContent="Yes" OffContent="No" />
+                            </StackPanel>
+                        </Grid>
+                        <Border Classes="card-separator" />
 
-    private void ExecuteShowLogs()
-    {
-        Utilities.OpenFolder(Constants.LogsFolder);
-    }
+                        <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock>Default brush</TextBlock>
+                                <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                                    Sets the default brush that is applied to new layers
+                                </TextBlock>
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                <StackPanel.Styles>
+                                    <Style Selector="ComboBox.brush /template/ ContentPresenter#ContentPresenter">
+                                        <Setter Property="ContentTemplate">
+                                            <Setter.Value>
+                                                <DataTemplate DataType="{x:Type layerBrushes:LayerBrushDescriptor}">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <avalonia:MaterialIcon Kind="{CompiledBinding Icon}" Height="20" Width="20" VerticalAlignment="Center" Margin="0 0 5 0" />
+                                                        <TextBlock Text="{CompiledBinding DisplayName}" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </StackPanel.Styles>
+                                <ComboBox Classes="brush"
+                                          Width="200"
+                                          HorizontalAlignment="Left"
+                                          ItemsSource="{CompiledBinding LayerBrushDescriptors}"
+                                          SelectedItem="{CompiledBinding SelectedLayerBrushDescriptor}">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type layerBrushes:LayerBrushDescriptor}">
+                                            <Grid ColumnDefinitions="30,*" RowDefinitions="Auto,Auto">
+                                                <avalonia:MaterialIcon Grid.Row="0"
+                                                                       Grid.RowSpan="2"
+                                                                       Kind="{CompiledBinding Icon}"
+                                                                       Height="20"
+                                                                       Width="20"
+                                                                       VerticalAlignment="Center"
+                                                                       HorizontalAlignment="Left" />
+                                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{CompiledBinding DisplayName}" TextWrapping="Wrap" MaxWidth="350" />
+                                                <TextBlock Classes="subtitle" Grid.Row="1" Grid.Column="1" Text="{CompiledBinding Description}" TextWrapping="Wrap" MaxWidth="350" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
 
-    private async Task ExecuteCheckForUpdate(CancellationToken cancellationToken)
-    {
-        try
-        {
-            // If an update was available a popup was shown, no need to continue
-            if (await _updateService.CheckForUpdate())
-                return;
+                <!-- Rendering -->
+                <TextBlock Classes="card-title">Rendering</TextBlock>
+                <Border Classes="card" VerticalAlignment="Stretch" Margin="0,0,5,0">
+                    <StackPanel>
+                        <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock>Preferred render method</TextBlock>
+                                <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                                    Software-based rendering is done purely on the CPU while Vulkan uses GPU-acceleration.
+                                </TextBlock>
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                <ComboBox Width="150"
+                                          SelectedItem="{CompiledBinding CorePreferredGraphicsContext.Value}"
+                                          ItemsSource="{CompiledBinding GraphicsContexts}" />
+                            </StackPanel>
+                        </Grid>
+                        <Border Classes="card-separator" />
 
-            _notificationService.CreateNotification()
-                .WithTitle("No update available")
-                .WithMessage("You are running the latest version in your current channel")
-                .Show();
-        }
-        catch (Exception e)
-        {
-            _notificationService.CreateNotification()
-                .WithTitle("Failed to check for update")
-                .WithMessage(e.Message)
-                .WithSeverity(NotificationSeverity.Warning)
-                .Show();
-        }
-    }
+                        <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock>Render scale</TextBlock>
+                                <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                                    Sets the resolution Artemis renders at, higher scale means more CPU-usage, especially on large surfaces.
+                                </TextBlock>
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                <ComboBox Width="150"
+                                          SelectedItem="{CompiledBinding SelectedRenderScale}"
+                                          ItemsSource="{CompiledBinding RenderScales}">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate x:DataType="settings:RenderSettingViewModel">
+                                            <TextBlock Text="{CompiledBinding Display}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </StackPanel>
+                        </Grid>
+                        <Border Classes="card-separator" />
 
-    private async Task ExecuteShowSetupWizard()
-    {
-        _startupWizardOpen = true;
-        await _windowService.ShowDialogAsync<StartupWizardViewModel, bool>();
-        _startupWizardOpen = false;
-    }
+                        <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0">
+                                <TextBlock>Target frame rate</TextBlock>
+                                <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                                    Sets the FPS Artemis tries to render at, higher FPS means more CPU-usage but smoother animations.
+                                </TextBlock>
+                                <TextBlock Classes="subtitle" TextWrapping="Wrap">
+                                    The options past 45 FPS are mostly useless unless you are using a custom device.
+                                </TextBlock>
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                <ComboBox Width="150"
+                                          SelectedItem="{CompiledBinding SelectedTargetFrameRate}"
+                                          ItemsSource="{CompiledBinding TargetFrameRates}">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate x:DataType="settings:RenderSettingViewModel">
+                                            <TextBlock Text="{CompiledBinding Display}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
 
-    private void ExecuteShowDebugger()
-    {
-        _debugService.ShowDebugger();
-    }
+                <!-- Tools -->
+                <TextBlock Classes="card-title">Tools</TextBlock>
+                <Border Classes="card" VerticalAlignment="Stretch" Margin="0,0,5,0">
+                    <StackPanel>
 
-    private void ExecuteShowDataFolder()
-    {
-        Utilities.OpenFolder(Constants.DataFolder);
-    }
+                        <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock>Setup wizard</TextBlock>
+                                <TextBlock Classes="subtitle">
+                                    Opens the startup wizard usually shown when Artemis first starts.
+                                </TextBlock>
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                <Button Command="{CompiledBinding ShowSetupWizard}"
+                                        Width="150"
+                                        Content="Show wizard" />
+                            </StackPanel>
+                        </Grid>
+                        <Border Classes="card-separator" />
 
-    private async Task ApplyAutoRun()
-    {
-        if (_autoRunProvider == null || _startupWizardOpen)
-            return;
+                        <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock>Debugger</TextBlock>
+                                <TextBlock Classes="subtitle">
+                                    Use the debugger to see the raw image Artemis is rendering on the surface.
+                                </TextBlock>
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                <Button Command="{CompiledBinding ShowDebugger}"
+                                        Width="150"
+                                        Content="Show debugger" />
+                            </StackPanel>
+                        </Grid>
+                        <Border Classes="card-separator" />
 
-        try
-        {
-            if (UIAutoRun.Value)
-                await _autoRunProvider.EnableAutoRun(false, UIAutoRunDelay.Value);
-            else
-                await _autoRunProvider.DisableAutoRun();
-        }
-        catch (Exception exception)
-        {
-            _windowService.ShowExceptionDialog("Failed to apply auto-run", exception);
-        }
-    }
-    
-    private void ApplyProtocolAssociation()
-    {
-        if (_protocolProvider == null)
-            return;
-        
-        try
-        {
-            if (UIUseProtocol.Value)
-                _protocolProvider.AssociateWithProtocol("artemis");
-            else
-                _protocolProvider.DisassociateWithProtocol("artemis");
-        }
-        catch (Exception exception)
-        {
-            _windowService.ShowExceptionDialog("Failed to apply protocol association", exception);
-        }
-    }
+                        <Grid RowDefinitions="*,*" ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock>Application files</TextBlock>
+                                <TextBlock Classes="subtitle">
+                                    Opens the directory where application files like plugins and settings are stored.
+                                </TextBlock>
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                <Button Command="{CompiledBinding ShowDataFolder}"
+                                        Width="150"
+                                        Content="Show app files" />
+                            </StackPanel>
+                        </Grid>
 
-    private async void UIAutoRunOnSettingChanged(object? sender, EventArgs e)
-    {
-        await ApplyAutoRun();
-    }
-    
-    private void UIUseProtocolOnSettingChanged(object? sender, EventArgs e)
-    {
-        ApplyProtocolAssociation();
-    }
+                    </StackPanel>
+                </Border>
 
-    private async void UIAutoRunDelayOnSettingChanged(object? sender, EventArgs e)
-    {
-        if (_autoRunProvider == null || !UIAutoRun.Value || _startupWizardOpen)
-            return;
+            </StackPanel>
+        </ScrollViewer>
 
-        try
-        {
-            await _autoRunProvider.EnableAutoRun(true, UIAutoRunDelay.Value);
-        }
-        catch (Exception exception)
-        {
-            _windowService.ShowExceptionDialog("Failed to apply auto-run", exception);
-        }
-    }
+    </Grid>
 
-    private void EnableMicaOnSettingChanged(object? sender, EventArgs e)
-    {
-        Shared.UI.SetMicaEnabled(EnableMica.Value);
-    }
-}
+</UserControl>
